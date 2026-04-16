@@ -76,7 +76,34 @@ Phase 2.
 
 ## Algorithm Recipe
 
-*(filled in during Phase 2)*
+For each song, add up points from these rules. Highest total wins.
+
+- Genre matches `favorite_genre`: `+2.0`
+- Mood matches `favorite_mood`: `+1.0`
+- Energy closeness: `+1.5 * (1 - |target_energy - song.energy|)`
+- `likes_acoustic = True` and `acousticness >= 0.6`: `+0.5`
+- `likes_acoustic = False` and `acousticness >= 0.6`: `-0.3`
+
+Genre is weighted higher than mood because it's a stronger signal of taste.
+Energy gets a continuous score instead of a yes/no match since it's a number.
+
+```mermaid
+flowchart TD
+    A[songs.csv] --> B[load_songs]
+    C[user_prefs] --> D[score every song]
+    B --> D
+    D --> E[sort by score]
+    E --> F[top k results]
+```
+
+### Biases I expect
+
+- A "pop" user probably never sees rock in the top 5, even if the rock song
+  matches on energy and mood.
+- Exact-string matching is rigid. "indie pop" earns nothing from a "pop"
+  user even though they're basically neighbors.
+- Pop/lofi show up more in my catalog than metal or classical, so users of
+  rare genres will get less variety.
 
 ---
 
