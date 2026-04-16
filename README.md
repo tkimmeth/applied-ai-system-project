@@ -123,6 +123,30 @@ pip install -r requirements.txt
 python -m src.main
 ```
 
+#### Sample output (default profile)
+
+```
+Loaded songs: 18
+
+=== Default profile (pop / happy / 0.8) ===
+profile: {'genre': 'pop', 'mood': 'happy', 'energy': 0.8, 'likes_acoustic': False}
+
+  Sunrise City - Neon Echo  [score 4.47]
+    because: genre match (+2.0), mood match (+1.0), energy closeness (+1.47)
+  Gym Hero - Max Pulse  [score 3.30]
+    because: genre match (+2.0), energy closeness (+1.30)
+  Rooftop Lights - Indigo Parade  [score 2.44]
+    because: mood match (+1.0), energy closeness (+1.44)
+  Night Drive Loop - Neon Echo  [score 1.42]
+    because: energy closeness (+1.42)
+  Block Party Heat - Flash Grid  [score 1.41]
+    because: energy closeness (+1.41)
+```
+
+Sunrise City wins because all three main rules fire for it (genre match, mood
+match, nearly exact energy). Gym Hero is second because it matches genre and
+has close-enough energy, but its mood is "intense," not "happy."
+
 ### Tests
 
 ```bash

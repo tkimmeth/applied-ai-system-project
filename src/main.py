@@ -1,33 +1,29 @@
-"""
-Command line runner for the Music Recommender Simulation.
+"""Command line runner for the music recommender simulation."""
 
-This file helps you quickly run and test your recommender.
+from src.recommender import load_songs, recommend_songs
 
-You will implement the functions in recommender.py:
-- load_songs
-- score_song
-- recommend_songs
-"""
 
-from recommender import load_songs, recommend_songs
+def print_recommendations(title: str, user_prefs: dict, songs: list) -> None:
+    """Print the top 5 recommendations for a given user_prefs dict."""
+    print(f"\n=== {title} ===")
+    print(f"profile: {user_prefs}\n")
+    for song, score, explanation in recommend_songs(user_prefs, songs, k=5):
+        print(f"  {song['title']} - {song['artist']}  [score {score:.2f}]")
+        print(f"    because: {explanation}")
 
 
 def main() -> None:
-    songs = load_songs("data/songs.csv") 
+    songs = load_songs("data/songs.csv")
+    print(f"Loaded songs: {len(songs)}")
 
-    # Starter example profile
-    user_prefs = {"genre": "pop", "mood": "happy", "energy": 0.8}
+    default_user = {
+        "genre": "pop",
+        "mood": "happy",
+        "energy": 0.8,
+        "likes_acoustic": False,
+    }
 
-    recommendations = recommend_songs(user_prefs, songs, k=5)
-
-    print("\nTop recommendations:\n")
-    for rec in recommendations:
-        # You decide the structure of each returned item.
-        # A common pattern is: (song, score, explanation)
-        song, score, explanation = rec
-        print(f"{song['title']} - Score: {score:.2f}")
-        print(f"Because: {explanation}")
-        print()
+    print_recommendations("Default profile (pop / happy / 0.8)", default_user, songs)
 
 
 if __name__ == "__main__":
