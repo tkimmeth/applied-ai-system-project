@@ -157,16 +157,64 @@ pytest
 
 ## Experiments
 
-*(filled in during Phase 4)*
+`src/main.py` runs 4 user profiles twice — once with default weights and
+once with an experimental set (`energy x 2`, `genre x 0.5`) — so you can see
+how sensitive the ranking is to weight changes.
+
+Profiles tested:
+
+- **High-Energy Pop** — pop / happy / 0.9
+- **Chill Lofi** — lofi / chill / 0.3 / likes acoustic
+- **Deep Intense Rock** — rock / intense / 0.95
+- **Adversarial** — pop / sad / 0.9 / likes acoustic (deliberately conflicting)
+
+Findings:
+
+- The three "normal" profiles got sensible top-1 results (Sunrise City,
+  Library Rain, Storm Runner).
+- The adversarial profile returned pop/happy songs instead of the sad
+  acoustic songs it asked for. Genre + energy beat mood + acoustic on raw
+  points, so the system just ignored the actual request.
+- When I halved genre weight and doubled energy, the top-1 songs barely
+  moved. But mid-ranks shifted — ambient songs crept into lofi results,
+  rock crept into pop results. Genre lock-in relaxed but didn't break.
+- The adversarial profile got *worse* in the experiment because the only
+  sad song in the catalog (Quiet Porch, energy 0.22) fell out of the top 5
+  when energy was weighted more heavily against its target of 0.9.
+
+Full pair-by-pair comparison in `reflection.md`. Bias writeup in
+`model_card.md` section 6.
 
 ---
 
 ## Limitations and Risks
 
-*(short version here, full discussion in `model_card.md`)*
+Short version:
+
+- Tiny catalog (18 songs), so any conclusion about "what the algorithm
+  does" is shaky.
+- No understanding of lyrics, language, or cultural context.
+- Exact-string matching on genre and mood means neighbors don't help each
+  other ("indie pop" gets nothing from a "pop" user).
+- Ignores user requests when genre + energy outrank mood + acoustic on
+  points. The adversarial profile showed this clearly.
+
+Full discussion in `model_card.md` section 6.
 
 ---
 
 ## Reflection
 
-*(filled in during Phase 5, see also `model_card.md` and `reflection.md`)*
+Building this made the "filter bubble" argument feel concrete. My
+adversarial profile asked for sad + acoustic and got pop + happy because
+the math said so. Nothing was broken, the weights just didn't encode what
+the user actually wanted. That's the failure mode real recommenders get
+criticized for, and it happens even with four rules and 18 songs.
+
+The other thing I took away is that showing reasons makes a trivial system
+feel trustworthy. Adding a reasons list to every recommendation turned a
+pile of addition into something that looks like it's explaining itself.
+That's worth remembering next time an app tells me "we recommend this
+because..."
+
+Full reflection in `model_card.md` section 9 and `reflection.md`.
