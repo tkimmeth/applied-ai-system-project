@@ -1,115 +1,102 @@
-# Music Recommender Simulation
+# VibeFinder: Applied AI Music Advisor
 
-## Project Summary
+A small, local applied-AI system that turns a plain-English music
+request into a ranked list of songs, with retrieval, an agent loop,
+and a reliability harness wrapped around the original Module 3
+recommender.
 
-This is a tiny content-based music recommender. You give it a "taste profile"
-(your favorite genre, mood, target energy, whether you like acoustic stuff) and
-it scores every song in a small CSV catalog, then returns the top matches with
-a short list of reasons for each pick.
-
-The point isn't to compete with Spotify. The point is to get a feel for how a
-real recommender turns user data + item data into a ranked list, and to be
-honest about where this kind of system breaks.
+> "I need calm music for coding, low energy, acoustic if possible."
+> &rarr; lofi / focused / energy 0.30 / wants acoustic
+> &rarr; 5 songs ranked, average energy delta 0.07, confidence 0.84.
 
 ---
 
-## How The System Works
+## Original Project
 
-### What real platforms do (the short version)
+This is built directly on top of my Module 3 starter
+**`ai110-module3show-musicrecommendersimulation-starter`**. The original
+loaded an 18-song CSV catalog, took a `UserProfile` of (favorite
+genre, favorite mood, target energy, likes_acoustic), and scored every
+song with a hand-tuned weighted rule, returning a top-k list with
+reasons. Useful, but the user had to already know what they wanted in
+those four exact slots, and there was no notion of confidence,
+retrieval, or whether the answer actually matched the request.
 
-Big platforms like Spotify and YouTube Music don't use one algorithm, they use
-a stack of them. Two of the main ideas:
-
-- **Collaborative filtering** looks at *other people*. If a lot of users who
-  liked the songs you liked also liked some other song, that other song gets
-  recommended to you. It doesn't really care what the song *sounds* like, it
-  just cares about overlapping behavior. Likes, skips, completion rates,
-  playlist co-occurrence, all of that feeds in.
-- **Content-based filtering** looks at *the songs themselves*. Each song gets
-  described by features (genre, tempo, energy, mood, audio fingerprints, etc),
-  and the system recommends songs whose features look like the ones you already
-  enjoy. No other users required.
-
-In practice the big apps blend both, plus a bunch of deep learning models that
-predict things like "will this user finish this track" or "will this user save
-this." Skips count more than you'd think.
-
-### What my version does
-
-My version is purely content-based, because that's the part you can actually
-build and reason about in a few hours. It does:
-
-1. Loads a small CSV of songs, where each song has descriptive features.
-2. Takes a `UserProfile` describing what the listener wants.
-3. Scores every song against the profile using a simple weighted rule.
-4. Sorts by score and returns the top `k` results, each with a list of reasons
-   like "genre match (+2.0)" so you can see why it picked them.
-
-There's no learning happening. The weights are written by me, by hand. That's
-on purpose, it makes the behavior easy to inspect and easy to break in
-interesting ways for the bias section.
-
-### Features used
-
-`Song` (one row in `data/songs.csv`):
-
-- `id`, `title`, `artist` — identity, not used for scoring
-- `genre` — categorical (pop, lofi, rock, etc)
-- `mood` — categorical (happy, chill, intense, etc)
-- `energy` — float 0.0–1.0
-- `tempo_bpm` — beats per minute
-- `valence` — float 0.0–1.0, roughly "musical positivity"
-- `danceability` — float 0.0–1.0
-- `acousticness` — float 0.0–1.0
-
-`UserProfile`:
-
-- `favorite_genre` — string, exact-match against the song's genre
-- `favorite_mood` — string, exact-match against the song's mood
-- `target_energy` — float 0.0–1.0, the user's preferred energy level
-- `likes_acoustic` — bool, whether to give a small bonus to acoustic tracks
-
-The exact scoring weights and the full recipe live in the next section, after
-Phase 2.
+VibeFinder keeps that recommender intact (same scoring weights, same
+explanation format) and wraps it in the rest of an applied AI system.
 
 ---
 
-## Algorithm Recipe
+## What Makes This an Applied AI System
 
-For each song, add up points from these rules. Highest total wins.
+The assignment asks for at least one of: retrieval, agentic workflow,
+fine-tuned/specialized behavior, or reliability testing. This project
+includes three of them, all integrated into the request path:
 
-- Genre matches `favorite_genre`: `+2.0`
-- Mood matches `favorite_mood`: `+1.0`
-- Energy closeness: `+1.5 * (1 - |target_energy - song.energy|)`
-- `likes_acoustic = True` and `acousticness >= 0.6`: `+0.5`
-- `likes_acoustic = False` and `acousticness >= 0.6`: `-0.3`
+- **Retrieval.** `retriever.py` runs a strict-then-relaxed candidate
+  retrieval over the catalog with an evidence list (mood match, genre
+  match, energy delta, acoustic match). The ranker only sees what
+  retrieval kept.
+- **Agentic workflow.** `advisor_agent.py` runs an observable loop —
+  parse, retrieve, rank, evaluate, retry once with relaxed retrieval
+  if confidence is below threshold — and writes every step as a JSONL
+  event to `logs/run_log.jsonl`.
+- **Reliability and guardrails.** `evaluator.py` produces a confidence
+  score in `[0, 1]` from a hand-written rubric (genre/mood/energy/
+  acoustic/coverage), `src/evaluate.py` runs a 7-case test harness
+  against the live agent, and a `pytest` suite covers the parser,
+  retriever, evaluator, and end-to-end flow.
 
-Genre is weighted higher than mood because it's a stronger signal of taste.
-Energy gets a continuous score instead of a yes/no match since it's a number.
+The retrieval and confidence scores actually change behavior: a low
+score triggers a relaxed retrieval retry, and contradictory or sparse
+requests come back with explicit warnings instead of silently being
+"answered."
 
-```mermaid
-flowchart TD
-    A[songs.csv] --> B[load_songs]
-    C[user_prefs] --> D[score every song]
-    B --> D
-    D --> E[sort by score]
-    E --> F[top k results]
+---
+
+## Architecture Overview
+
+```
+        plain English request
+                 │
+                 ▼
+       ┌────────────────────┐
+       │  profile_parser    │  rule + keyword matching
+       │  (sets warnings)   │
+       └────────┬───────────┘
+                │ ParsedProfile
+                ▼
+       ┌────────────────────┐
+       │    retriever       │  strict pass (>=2 evidence pieces)
+       └────────┬───────────┘
+                │ Candidates (+ evidence)
+                ▼
+       ┌────────────────────┐
+       │  recommender       │  original Module 3 weighted score
+       │   (ranker)         │
+       └────────┬───────────┘
+                │ ranked recs
+                ▼
+       ┌────────────────────┐         ┌─────────────────────┐
+       │    evaluator       │ ──low──▶│  retriever (relaxed)│
+       │  (confidence,      │         │  genre/mood neighbors
+       │   guardrails)      │ ◀── retry once if it improves
+       └────────┬───────────┘
+                │ final response: recs + confidence + warnings + steps
+                ▼
+            user / demo / harness
+
+   logs/run_log.jsonl  ◀── parse / retrieve / rank / evaluate / final events
 ```
 
-### Biases I expect
-
-- A "pop" user probably never sees rock in the top 5, even if the rock song
-  matches on energy and mood.
-- Exact-string matching is rigid. "indie pop" earns nothing from a "pop"
-  user even though they're basically neighbors.
-- Pop/lofi show up more in my catalog than metal or classical, so users of
-  rare genres will get less variety.
+The Mermaid source for the same diagram lives at
+[`assets/diagrams/system_architecture.mmd`](assets/diagrams/system_architecture.mmd).
+Render it with [mermaid.live](https://mermaid.live) and drop the PNG
+into `assets/diagrams/system_architecture.png` if you want it inline.
 
 ---
 
-## Getting Started
-
-### Setup
+## Setup
 
 ```bash
 python -m venv .venv
@@ -117,104 +104,245 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Run
+Tested with Python 3.11+ on Linux. No paid APIs, no external services
+— the whole pipeline runs locally and deterministically.
+
+---
+
+## How to Run
 
 ```bash
-python -m src.main
+# Three sample requests, full agent trace per request:
+python -m src.demo
+
+# Reliability harness — 7 cases, prints pass/fail summary:
+python -m src.evaluate
+
+# Unit tests:
+pytest -q
 ```
 
-#### Sample output (default profile)
-
-```
-Loaded songs: 18
-
-=== Default profile (pop / happy / 0.8) ===
-profile: {'genre': 'pop', 'mood': 'happy', 'energy': 0.8, 'likes_acoustic': False}
-
-  Sunrise City - Neon Echo  [score 4.47]
-    because: genre match (+2.0), mood match (+1.0), energy closeness (+1.47)
-  Gym Hero - Max Pulse  [score 3.30]
-    because: genre match (+2.0), energy closeness (+1.30)
-  Rooftop Lights - Indigo Parade  [score 2.44]
-    because: mood match (+1.0), energy closeness (+1.44)
-  Night Drive Loop - Neon Echo  [score 1.42]
-    because: energy closeness (+1.42)
-  Block Party Heat - Flash Grid  [score 1.41]
-    because: energy closeness (+1.41)
-```
-
-Sunrise City wins because all three main rules fire for it (genre match, mood
-match, nearly exact energy). Gym Hero is second because it matches genre and
-has close-enough energy, but its mood is "intense," not "happy."
-
-### Tests
+The original Module 3 entry point is still available:
 
 ```bash
-pytest
+python -m src.main   # original 4-profile recommender simulation
 ```
 
 ---
 
-## Experiments
+## Sample Interactions
 
-`src/main.py` runs 4 user profiles twice — once with default weights and
-once with an experimental set (`energy x 2`, `genre x 0.5`) — so you can see
-how sensitive the ranking is to weight changes.
+### 1. Clean request — lofi/focused/acoustic
 
-Profiles tested:
+```
+REQUEST  : Give me calm focused music for coding, preferably acoustic
 
-- **High-Energy Pop** — pop / happy / 0.9
-- **Chill Lofi** — lofi / chill / 0.3 / likes acoustic
-- **Deep Intense Rock** — rock / intense / 0.95
-- **Adversarial** — pop / sad / 0.9 / likes acoustic (deliberately conflicting)
+PARSED PROFILE
+  genre=lofi  mood=focused  energy=0.30  acoustic=True
 
-Findings:
+AGENT STEPS
+  [parse   ] genre=lofi mood=focused energy=0.30 acoustic=True warnings=1
+  [retrieve] strict pass kept 8 candidates
+  [rank    ] ranked 5 recommendations
+  [evaluate] confidence=0.84 passed=True
 
-- The three "normal" profiles got sensible top-1 results (Sunrise City,
-  Library Rain, Storm Runner).
-- The adversarial profile returned pop/happy songs instead of the sad
-  acoustic songs it asked for. Genre + energy beat mood + acoustic on raw
-  points, so the system just ignored the actual request.
-- When I halved genre weight and doubled energy, the top-1 songs barely
-  moved. But mid-ranks shifted — ambient songs crept into lofi results,
-  rock crept into pop results. Genre lock-in relaxed but didn't break.
-- The adversarial profile got *worse* in the experiment because the only
-  sad song in the catalog (Quiet Porch, energy 0.22) fell out of the top 5
-  when energy was weighted more heavily against its target of 0.9.
+TOP RECOMMENDATIONS
+  Focus Flow — LoRoom         score 4.85
+  Library Rain — Paper Lanterns  score 3.93
+  Midnight Coding — LoRoom    score 3.82
+  Spacewalk Thoughts — Orbit Bloom  score 1.97
+  Coffee Shop Stories — Slow Stereo  score 1.90
 
-Full pair-by-pair comparison in `reflection.md`. Bias writeup in
-`model_card.md` section 6.
+WARNINGS
+  - multiple mood hints found (focused, chill); picked 'focused'
+```
+
+### 2. Activity-driven request — gym/upbeat/happy
+
+```
+REQUEST  : I need upbeat happy music for the gym
+
+PARSED PROFILE
+  genre=hip hop  mood=happy  energy=0.75  acoustic=False
+
+TOP RECOMMENDATIONS
+  Block Party Heat — Flash Grid    score 3.34
+  Rooftop Lights — Indigo Parade   score 2.49
+  Sunrise City — Neon Echo         score 2.40
+
+EVALUATION
+  confidence=0.64  passed_guardrails=True
+```
+
+### 3. Adversarial / contradictory request
+
+```
+REQUEST  : I want sad acoustic music but still high energy
+
+PARSED PROFILE
+  genre=pop  mood=sad  energy=0.85  acoustic=True
+
+TOP RECOMMENDATIONS
+  Sunrise City — Neon Echo   score 3.46    (pop / happy)
+  Gym Hero — Max Pulse       score 3.38    (pop / intense)
+  Quiet Porch — Fern and Ash score 2.06    (folk / sad / acoustic)
+
+EVALUATION
+  confidence=0.61  passed_guardrails=True
+
+WARNINGS
+  - request asks for a low-arousal mood with high energy — catalog rarely has both
+  - user wanted acoustic but most picks are not acoustic
+```
+
+That third case is the interesting one. The system can't actually
+satisfy "sad + acoustic + high energy" because the catalog only has
+one sad song and it isn't high-energy. Instead of pretending the top
+result was a good match, the parser warns about the contradiction and
+the evaluator warns about the acoustic miss.
+
+Screenshots of the live demo go in
+[`assets/screenshots/`](assets/screenshots/).
 
 ---
 
-## Limitations and Risks
+## Design Decisions
 
-Short version:
+**Rule-based parser instead of an LLM.** I considered piping the
+request through a small local model, but every option that wasn't
+basically free either wanted an API key or shipped 4 GB of weights
+for a homework project. The rule-based parser is uglier but fully
+deterministic: every test runs the same way every time, every
+warning is reproducible, and the model card can honestly say what
+the limits are. The trade-off is real — anything that doesn't match
+a keyword falls back to a default — but I'd rather be honest about
+that than hide it behind an LLM that fails in less explainable ways.
 
-- Tiny catalog (18 songs), so any conclusion about "what the algorithm
-  does" is shaky.
-- No understanding of lyrics, language, or cultural context.
-- Exact-string matching on genre and mood means neighbors don't help each
-  other ("indie pop" gets nothing from a "pop" user).
-- Ignores user requests when genre + energy outrank mood + acoustic on
-  points. The adversarial profile showed this clearly.
+**Two-stage retrieval, even at 18 songs.** The catalog is small
+enough that the ranker could just score everything. Splitting
+retrieval out anyway gave me a place to attach evidence ("we kept
+this song because it matches your genre and is within 0.05 energy")
+and a place to relax the rules on retry. It also makes the system
+look like the actual shape of a real recommender pipeline, which I
+think matters more than performance at this size.
 
-Full discussion in `model_card.md` section 6.
+**Confidence as a hand-written rubric.** Five weighted ratios:
+genre 0.30, mood 0.25, energy 0.25, acoustic 0.10, coverage 0.10.
+That's auditable in a way a learned scorer isn't. The threshold for
+"passed guardrails" is 0.55, which I picked by running the harness
+and finding that anything below that was a request the catalog
+genuinely couldn't serve.
+
+**Retry only adopts the relaxed result if it improved confidence.**
+Otherwise the system would happily replace a strict, sensible answer
+with a wider, fuzzier one and feel worse to the user. If neither
+pass scored above threshold, the response carries the warnings and
+the lower confidence, which is the honest outcome.
+
+**The original recommender is untouched.** `recommender.py` is the
+same file from Module 3 — same constants, same scoring, same OOP
+and functional APIs. The agent calls it through `score_song`, so any
+change to the original weights still flows through the system.
 
 ---
 
-## Reflection
+## Testing Summary
 
-Building this made the "filter bubble" argument feel concrete. My
-adversarial profile asked for sad + acoustic and got pop + happy because
-the math said so. Nothing was broken, the weights just didn't encode what
-the user actually wanted. That's the failure mode real recommenders get
-criticized for, and it happens even with four rules and 18 songs.
+`pytest` covers parser keyword behavior, contradiction warnings,
+empty/garbage input, retriever evidence and relaxed mode, evaluator
+unit interval and guardrails, and the end-to-end agent path
+including JSONL logging.
 
-The other thing I took away is that showing reasons makes a trivial system
-feel trustworthy. Adding a reasons list to every recommendation turned a
-pile of addition into something that looks like it's explaining itself.
-That's worth remembering next time an app tells me "we recommend this
-because..."
+Most recent run:
 
-Full reflection in `model_card.md` section 9 and `reflection.md`.
+```
+20 passed in 0.02s
+```
+
+`python -m src.evaluate` runs the live agent against 7 reliability
+cases:
+
+```
+Total cases     : 7
+Passed          : 7
+Failed          : 0
+Average conf.   : 0.677
+```
+
+What I learned from running the harness while building it:
+
+- The first version of the parser ignored "sad" as a mood signal
+  unless the user also said "low energy." The harness caught that
+  immediately because the `sad_acoustic_low_energy` case kept
+  defaulting to energy 0.55. Adding a mood-default energy table
+  fixed it.
+- The adversarial case (`contradictory_sad_high_energy`) is meant
+  to fail to satisfy the request. The reliability check on it is
+  not "does the request succeed" but "does the system warn me that
+  it can't" — which it does.
+- Confidence below 0.55 in the harness usually means catalog
+  thinness, not a parser bug. That matched my intuition from the
+  original Module 3 reflection: 18 songs is not a lot.
+
+---
+
+## Limitations
+
+- The catalog is still 18 songs. Anything I claim about behavior is
+  shaky beyond this size.
+- The parser is a keyword scanner. It doesn't understand grammar,
+  negation, or sarcasm. "Anything but pop" still triggers the pop
+  keyword.
+- Confidence weights are hand-picked. They reflect what I think
+  matters; a different student could justify a different set and
+  get different pass/fail outcomes.
+- Genre and mood neighbor tables are also hand-picked. They lean
+  toward how I personally hear genre similarity, which is a bias.
+- No personalization or memory across requests. Every call starts
+  fresh.
+
+---
+
+## Ethics / Misuse
+
+The risk surface is small — it's a local song picker — but the
+framework still has the usual recommender problems in miniature:
+
+- Catalog skew silently steers users away from underrepresented
+  genres.
+- "Confidence 0.84" sounds authoritative, and it isn't. It's a
+  weighted average of five hand-coded checks. Showing it as a number
+  could mislead a user into trusting it more than they should.
+- A real system using this shape could be tuned to nudge users
+  toward whatever the operator wants to promote, just by adjusting
+  the genre weight in the ranker. The transparency of the weights
+  helps that not be invisible, but doesn't prevent it.
+
+What I did about it: every recommendation comes with a reasons list
+and an explicit confidence number, contradictions raise warnings
+instead of being papered over, and the model card calls out the
+catalog skew directly.
+
+---
+
+## Loom Walkthrough
+
+`TODO`: link goes here once the walkthrough is recorded.
+
+---
+
+## Portfolio Reflection
+
+Building this on top of Module 3 made the difference between a
+"function that returns answers" and an "applied AI system" feel
+concrete. The original recommender wasn't wrong, it just had no
+opinion about whether its own answers were any good. Adding
+parsing, retrieval, evaluation, and a retry loop turned it into
+something that could *report on itself* — and the test harness
+turned that report into something I could trust.
+
+The thing I'm taking forward is that reliability scaffolding is
+worth building before fancy behavior. A confidence score and a
+small harness caught more bugs in this project than any amount of
+extra parsing logic would have, because they made every change
+visible.

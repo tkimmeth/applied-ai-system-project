@@ -1,0 +1,48 @@
+%% VibeFinder system architecture
+%% Render with Mermaid Live Editor (https://mermaid.live) and export
+%% the PNG into assets/diagrams/system_architecture.png so README.md
+%% can reference an image.
+
+flowchart TD
+    User["User request<br/>(plain English)"]:::input
+    Parser["profile_parser.py<br/>keyword + rule matching"]:::stage
+    Profile["ParsedProfile<br/>genre, mood, energy,<br/>likes_acoustic, warnings"]:::data
+    Retriever["retriever.py<br/>strict pass<br/>(>=2 evidence items)"]:::stage
+    Candidates["Candidates<br/>+ evidence list"]:::data
+    Ranker["recommender.py<br/>weighted scoring"]:::stage
+    Evaluator["evaluator.py<br/>confidence + guardrails"]:::stage
+    Decide{"confidence ≥ 0.55<br/>and ≥ 3 recs?"}:::decision
+    Relaxed["retriever.py (relaxed)<br/>genre/mood neighbors,<br/>wider energy band"]:::stage
+    Final["Final response<br/>recs + confidence + warnings + steps"]:::output
+
+    Songs[("data/songs.csv")]:::source
+    Logs[("logs/run_log.jsonl<br/>(JSONL, gitignored)")]:::source
+    Tests[("tests/ + src/evaluate.py<br/>reliability harness")]:::testing
+    Human[/"README screenshots /<br/>human review"/]:::testing
+
+    User --> Parser --> Profile --> Retriever
+    Songs --> Retriever
+    Retriever --> Candidates --> Ranker --> Evaluator --> Decide
+    Decide -- yes --> Final
+    Decide -- no  --> Relaxed --> Ranker
+    Songs --> Relaxed
+
+    Parser -. emits .-> Logs
+    Retriever -. emits .-> Logs
+    Ranker -. emits .-> Logs
+    Evaluator -. emits .-> Logs
+    Final -. emits .-> Logs
+
+    Tests -. exercises .-> Parser
+    Tests -. exercises .-> Retriever
+    Tests -. exercises .-> Evaluator
+    Tests -. exercises .-> Final
+    Human -. reviews .-> Final
+
+    classDef input fill:#1e3a5f,color:#fff,stroke:#4a7bb7,stroke-width:1px;
+    classDef stage fill:#2d5a3d,color:#fff,stroke:#52a373,stroke-width:1px;
+    classDef data fill:#5a4a1e,color:#fff,stroke:#a38b3e,stroke-width:1px;
+    classDef decision fill:#5a2d4a,color:#fff,stroke:#a35283,stroke-width:1px;
+    classDef output fill:#1e4a5a,color:#fff,stroke:#3e8ba3,stroke-width:1px;
+    classDef source fill:#2d2d2d,color:#ccc,stroke:#666,stroke-dasharray:4 2;
+    classDef testing fill:#4a2d2d,color:#ddd,stroke:#a35252,stroke-dasharray:4 2;

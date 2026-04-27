@@ -1,153 +1,234 @@
-# 🎧 Model Card: Music Recommender Simulation
+# Model Card: VibeFinder Applied AI Music Advisor
 
-## 1. Model Name
+## 1. System Name
 
-VibeFinder 1.0
+VibeFinder 2.0 — Applied AI Music Advisor.
+
+Built on top of my Module 3 starter
+`ai110-module3show-musicrecommendersimulation-starter`, which
+already had a working content-based recommender. VibeFinder adds the
+parser, retriever, agent loop, evaluator, logging, and reliability
+harness around it.
 
 ---
 
 ## 2. Intended Use
 
-Classroom project. Suggests 5 songs from a small catalog (18 songs) based on
-a stated favorite genre, mood, target energy, and whether the user wants
-acoustic music.
+A homework / portfolio demo of an applied AI system: take a
+plain-English music request, hand back a ranked song list with a
+confidence score, an evidence list, and warnings when the request
+can't be honestly satisfied by the catalog.
 
-It assumes the user knows what they want and can name it in those four
-categories. It is not for real users. It has no personalization, no learning,
-no listening history.
-
----
-
-## 3. How the Model Works
-
-For every song, the system adds up points. Matching genre is worth the
-most (2 points). Matching mood is worth less (1 point). Being close to the
-user's target energy level is worth a variable amount — closest = max
-reward, furthest = zero. Acoustic songs get a small bonus if the user likes
-acoustic, a small penalty if they don't.
-
-Once every song has a score, the system sorts them and hands back the top
-5, each with a little note saying what rules fired and how many points
-they earned.
-
-The starter code had empty function bodies. I wrote all the scoring, the
-CSV loading, the ranking, and a shared helper so the OOP and functional
-paths use the same math.
+It is meant for inspection, demonstration, and grading. It is not
+meant to actually recommend music to real users.
 
 ---
 
-## 4. Data
+## 3. Not Intended Use
 
-18 songs in `data/songs.csv`. The starter gave me 10, I added 8.
+- Production recommendation. Catalog is 18 songs and the parser is
+  a keyword scanner.
+- Anything where confidence numbers might be quoted as if they
+  meant calibrated probability. The score is a weighted rubric, not
+  a probability.
+- Sensitive contexts (mental-health prompts, medical advice
+  hidden in a "sad music" request, etc). The system will happily
+  return a folk song if you say "sad," and that is the only thing
+  it will do.
+
+---
+
+## 4. How It Works
+
+A single user request flows through five components:
+
+1. **`profile_parser.py`** — keyword + rule matching. Maps activity
+   words ("coding," "gym"), mood words, energy phrases, and an
+   acoustic/electronic flag onto a structured `ParsedProfile`.
+   Conflicts (multiple genres, sad-with-high-energy, acoustic vs
+   electronic) are recorded as warnings instead of overwriting each
+   other silently.
+2. **`retriever.py`** — strict pass keeps any song with two or more
+   pieces of evidence (genre match, mood match, energy within 0.20,
+   acoustic match). Evidence is attached to each candidate so the
+   agent and evaluator can see it.
+3. **`recommender.py`** — original Module 3 weighted scorer. Same
+   constants, same explanation strings. The agent calls into this
+   through `score_song`.
+4. **`evaluator.py`** — hand-written rubric: weighted average of
+   genre ratio, mood ratio, energy closeness, acoustic match, and
+   coverage. Produces a `confidence` in `[0, 1]`, a
+   `passed_guardrails` boolean, and a list of warnings.
+5. **`advisor_agent.py`** — orchestrates the loop, writes JSONL
+   events to `logs/run_log.jsonl`, and retries once with the
+   relaxed retrieval mode (genre/mood neighbors, wider energy
+   tolerance) if confidence is below 0.55. The relaxed result is
+   only adopted if it actually improved confidence.
+
+---
+
+## 5. Data
+
+`data/songs.csv`. 18 rows. Each song has: id, title, artist, genre,
+mood, energy, tempo_bpm, valence, danceability, acousticness.
 
 Genres covered: pop, lofi, rock, ambient, jazz, synthwave, indie pop,
-hip hop, country, folk, electronic, r&b, metal, classical, indie rock.
+hip hop, country, folk, electronic, r&b, metal, classical, indie
+rock.
 
-Moods covered: happy, chill, intense, relaxed, focused, moody, energetic,
-nostalgic, sad, romantic, melancholy.
+Moods covered: happy, chill, intense, relaxed, focused, moody,
+energetic, nostalgic, sad, romantic, melancholy.
 
-Skew I noticed: pop and lofi are overrepresented. Only one sad song exists
-in the whole catalog. No latin, no k-pop, no gospel. The taste this dataset
-represents is basically mine — I picked what felt like a reasonable spread,
-but "reasonable to me" isn't neutral.
-
----
-
-## 5. Strengths
-
-- Works well for "clean" profiles where genre, mood, and energy all point
-  the same direction. Pop-happy-high-energy, lofi-chill-low-energy, and
-  rock-intense-high-energy all returned the song I would have picked by hand.
-- Every recommendation comes with a reasons list, so you can see exactly
-  why a song ranked where it did. That transparency is underrated.
-- Easy to tune. The weights are five named constants at the top of
-  `recommender.py`. Changing behavior is a one-line edit.
-- Deterministic. Same profile always returns the same result, which made
-  comparing the experiment runs straightforward.
+Skew (carried from the Module 3 model card and still true): pop and
+lofi are over-represented. Only one truly sad song. No latin, no
+k-pop, no gospel. The set reflects my own taste, not a balanced
+sample.
 
 ---
 
-## 6. Limitations and Bias
+## 6. Strengths
 
-The biggest problem: the system ignores what the user explicitly asked for
-if the genre happens to match. My adversarial profile asked for "pop + sad +
-high energy + acoustic." The top two results were pop, happy, and not
-acoustic at all. Genre + energy together were worth more points than mood +
-acoustic bonus, so the system gave the user an answer that technically scored
-high but totally missed the request.
-
-Other limitations I saw:
-
-- **Genre lock-in.** If you pick "pop," you almost never see rock or lofi
-  in your top 5 even if they'd match on every other feature.
-- **String equality is too strict.** "indie pop" earns zero genre points
-  from a "pop" user, and "relaxed" earns nothing from a "chill" user, even
-  though those are effectively neighbors.
-- **Catalog skew.** Pop and lofi are overrepresented in 18 songs. Users of
-  underrepresented genres (metal, classical) get less variety and lower
-  top scores.
-- **No diversity in results.** Two very similar lofi songs (Library Rain
-  and Midnight Coding) both sit at the top for the Chill Lofi profile.
-  Nothing encourages variety.
+- Deterministic and inspectable. Same input always returns the same
+  output. Every weight, threshold, and neighbor table is named in
+  source.
+- Explanations attached at every layer. Each candidate carries an
+  evidence list, each recommendation carries a `because` string,
+  and each evaluation carries a metrics dict.
+- Honest about its own limits. Confidence below threshold triggers
+  retry; sparse or contradictory requests come back with warnings;
+  the harness reports failures rather than smoothing them over.
+- Test harness exercises the live agent rather than mocked stubs.
+  All 7 reliability cases hit `data/songs.csv` through the real
+  pipeline.
 
 ---
 
-## 7. Evaluation
+## 7. Limitations and Bias
 
-I tested with four profiles: High-Energy Pop, Chill Lofi, Deep Intense Rock,
-and an Adversarial profile designed to break it (pop + sad + high energy +
-acoustic, where pop is never sad in my catalog).
-
-For each profile I looked at whether the top result "felt right" given the
-preferences, and whether the full top-5 made sense. Then I ran a weight
-experiment (energy x2, genre x0.5) to test sensitivity.
-
-What I found:
-
-- The three "normal" profiles all got sensible top-1 results that matched
-  what a human would pick.
-- The adversarial profile gave pop/happy songs instead of the sad/acoustic
-  ones the user asked for, which is the biggest failure mode.
-- The weight experiment moved mid-ranks around but usually kept the top-1,
-  suggesting genre and energy reinforce each other more than I thought.
-- There's a pytest suite (`tests/test_recommender.py`) covering the OOP
-  path — sorting by score and non-empty explanation strings.
-
-Full details in `reflection.md`.
+- **Keyword scanner blindness.** "Anything but pop" still triggers
+  pop. Negation, sarcasm, and idiom are completely lost.
+- **Catalog skew.** Pop and lofi over-represented; users of
+  under-represented genres get less variety and lower confidence
+  scores.
+- **Hand-picked weights.** Genre 0.30, mood 0.25, energy 0.25,
+  acoustic 0.10, coverage 0.10. Defensible, but reflect my
+  judgment, not a learned signal.
+- **Hand-picked neighbor tables.** "indie pop" is a neighbor of
+  "pop" because I said so. Different people would draw the
+  neighborhoods differently.
+- **String-equality genre/mood matching at the ranker level.** The
+  retriever softens this with neighbor tables, but the original
+  scoring rule is still strict-equality, so the ranker rewards
+  exact matches more than feels right at the catalog scale.
+- **No diversity term.** Two near-duplicate lofi tracks from the
+  same artist can both sit in the top 5 for a calm-coding profile.
 
 ---
 
-## 8. Future Work
+## 8. Reliability Testing
 
-- Partial genre matching. "indie pop" should get something from a "pop"
-  user, not zero.
-- Soft mood clusters. "chill," "relaxed," and "focused" should be treated
-  as neighbors.
-- Diversity penalty so the top 5 isn't dominated by near-duplicate lofi
-  tracks from the same artist.
-- Bigger and more balanced catalog before drawing any conclusions.
+Two layers:
+
+- **`pytest` suite** — `tests/test_profile_parser.py`,
+  `test_retriever.py`, `test_evaluator.py`, `test_advisor_agent.py`,
+  and the original `test_recommender.py`. Covers parser keyword
+  behavior, contradiction warnings, empty/garbage input, retriever
+  evidence and relaxed mode, evaluator unit-interval and
+  guardrails, and the end-to-end agent path including JSONL
+  logging. Most recent run: 20 passed.
+- **`src/evaluate.py` reliability harness** — 7 cases that drive
+  the live agent against the real catalog and check parsed
+  profile, confidence band, and expected warnings. Most recent
+  run: 7 / 7 passing, average confidence 0.677.
+
+Confidence rubric weights and the `CONFIDENCE_PASS = 0.55`
+threshold are exposed as constants in `src/evaluator.py`. Anyone
+auditing the system can change them and rerun the harness.
 
 ---
 
-## 9. Personal Reflection
+## 9. Misuse Risks and Prevention
 
-The biggest learning moment was running the adversarial profile and watching
-the system hand me pop-happy songs when I asked for sad-acoustic. Nothing
-was broken, the math was working exactly as I wrote it, but the output was
-wrong in a way that matched the kind of complaint people have about real
-recommenders. It made the "filter bubble" idea feel concrete instead of
-abstract.
+- **Misleading authority of confidence numbers.** "Confidence 0.84"
+  sounds calibrated and isn't. Mitigation: the README and this
+  card both say it's a hand-written rubric, not a probability, and
+  the metrics dict shows the underlying ratios so a reader can see
+  what fed the number.
+- **Silent steering by weight changes.** Whoever tunes the weights
+  shapes the output. Mitigation: the constants are at the top of
+  `evaluator.py` / `recommender.py` and not buried; the harness
+  re-runs against them so any change is visible immediately.
+- **"It told me to" risk.** A user could read a sad-music
+  recommendation as advice. Mitigation: this is documented as
+  out-of-scope in section 3, and contradictory or thin requests
+  come back with explicit warnings rather than confident answers.
 
-AI tools were helpful for boilerplate (CSV loading, Mermaid syntax, docstring
-cleanup) but I had to push back when suggestions wanted to make the scoring
-fancier than it needed to be. Keeping the weights simple was the whole
-point — if I can't reason about the output, I can't debug the bias.
+---
 
-What surprised me most was how "smart" a dumb algorithm can feel just by
-showing its work. Attaching reasons to every recommendation made a pile of
-addition feel like it was explaining itself. Real apps do the same trick,
-and it's easier to trust them than they probably deserve.
+## 10. What Surprised Me During Testing
 
-If I extended this I'd add fuzzy genre/mood matching, a diversity term, and
-try actual collaborative filtering on a bigger dataset. The current
-bottleneck is the catalog, not the algorithm.
+The thing that genuinely caught me out was that the relaxed retry
+sometimes made the result *worse* on confidence. Not by a lot, but
+enough that I had to add the "only adopt the retry if it improved
+confidence" check. Without it, a request that the strict pass had
+answered cleanly could end up with a wider, weaker result just
+because confidence had been near the threshold. That was a
+behavioral bug I would not have spotted without the harness — the
+unit tests said everything was fine, the harness said the average
+confidence dropped.
+
+The other surprise was how much the parser quality drove the
+evaluator's output. I kept thinking confidence would be limited by
+the catalog, but for the most part the catalog was fine — what
+moved the score up or down was whether the parser had the right
+mood and energy band. The "sad with no explicit energy" failure I
+caught in the harness is a great example: adding a single
+mood-defaults table moved that case from FAIL to PASS without
+touching the catalog at all.
+
+---
+
+## 11. AI Collaboration Reflection
+
+I worked with Claude as my coding partner on this project, in much
+the same way I'd work with a senior dev who has loaded the
+assignment.
+
+**A helpful suggestion.** When I was sketching the agent loop,
+Claude suggested making the relaxed-retry conditional on actually
+improving confidence — not just running it whenever the strict
+pass scored low. That ended up catching the bug above where the
+relaxed pass returned a wider but weaker set. I would have written
+"retry on low confidence, replace result" and shipped it without
+the check.
+
+**A flawed suggestion.** Earlier in the build, I asked for an
+energy-from-mood default and the first version it produced
+overrode explicit energy phrases. So if the user said "sad music,
+high energy" the parser would still snap energy down to 0.30
+because "sad" mapped to it. That hid the contradiction the
+adversarial case is supposed to expose. I had to push back and
+make the rule "mood default applies *only* when no explicit
+energy phrase was matched." After that change, the
+contradictory-sad-high-energy case correctly produced both the
+high energy reading and the low-arousal warning.
+
+The takeaway is the same as Module 3: AI tools are great at
+boilerplate and at suggesting structures I hadn't thought of, but
+they will happily write convenient logic that erases the very
+behavior the assignment is supposed to test. The harness is what
+keeps me honest, not the AI.
+
+---
+
+## 12. Future Work
+
+- Replace string-equality genre/mood matching in the ranker with
+  the same neighbor tables retrieval already uses, so partial
+  matches earn partial points end-to-end.
+- Diversity penalty in the ranker so the top 5 isn't dominated by
+  near-duplicates.
+- Bigger, more balanced catalog before drawing any conclusion
+  about whether the rubric weights are reasonable.
+- A genuinely small local LLM on the parser side, kept behind a
+  flag, so the rule-based parser stays the audited fallback.
