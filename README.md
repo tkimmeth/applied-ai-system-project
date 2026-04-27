@@ -56,43 +56,19 @@ requests come back with explicit warnings instead of silently being
 
 ## Architecture Overview
 
-```
-        plain English request
-                 │
-                 ▼
-       ┌────────────────────┐
-       │  profile_parser    │  rule + keyword matching
-       │  (sets warnings)   │
-       └────────┬───────────┘
-                │ ParsedProfile
-                ▼
-       ┌────────────────────┐
-       │    retriever       │  strict pass (>=2 evidence pieces)
-       └────────┬───────────┘
-                │ Candidates (+ evidence)
-                ▼
-       ┌────────────────────┐
-       │  recommender       │  original Module 3 weighted score
-       │   (ranker)         │
-       └────────┬───────────┘
-                │ ranked recs
-                ▼
-       ┌────────────────────┐         ┌─────────────────────┐
-       │    evaluator       │ ──low──▶│  retriever (relaxed)│
-       │  (confidence,      │         │  genre/mood neighbors
-       │   guardrails)      │ ◀── retry once if it improves
-       └────────┬───────────┘
-                │ final response: recs + confidence + warnings + steps
-                ▼
-            user / demo / harness
+![VibeFinder system architecture](assets/diagrams/system_architecture.png)
 
-   logs/run_log.jsonl  ◀── parse / retrieve / rank / evaluate / final events
-```
+A user request flows top-to-right through `profile_parser`, then down
+through `retriever` (strict pass) → `recommender` (weighted ranker) →
+`evaluator` (confidence + guardrails). If confidence is below 0.55 or
+fewer than three recommendations survived, the agent retries once
+through `retriever` in relaxed mode (genre/mood neighbors, wider
+energy band) before assembling the final response. Every stage emits
+JSONL events to `logs/run_log.jsonl`. The reliability harness in
+`tests/` and `src/evaluate.py` exercises the live pipeline against
+fixed inputs.
 
-The Mermaid source for the same diagram lives at
-[`assets/diagrams/system_architecture.mmd`](assets/diagrams/system_architecture.mmd).
-Render it with [mermaid.live](https://mermaid.live) and drop the PNG
-into `assets/diagrams/system_architecture.png` if you want it inline.
+Mermaid source: [`assets/diagrams/system_architecture.mmd`](assets/diagrams/system_architecture.mmd).
 
 ---
 
@@ -325,13 +301,52 @@ catalog skew directly.
 
 ---
 
-## Loom Walkthrough
+## Video Walkthrough
 
-`TODO`: link goes here once the walkthrough is recorded.
+> YouTube link goes here once recorded.
+
+(The CodePath rubric mentions Loom — Loom doesn't have a Linux client,
+so the walkthrough is hosted on YouTube instead. Same content: an
+end-to-end run of the system, the AI feature behavior, and the
+reliability/guardrail behavior on the three sample inputs.)
 
 ---
 
-## Portfolio Reflection
+## AI Collaboration
+
+I worked with Claude as a coding partner across this build. Two
+specific moments worth flagging:
+
+**A helpful suggestion.** When I was sketching the agent loop,
+Claude suggested making the relaxed-retry conditional on actually
+improving confidence — not just running it whenever the strict
+pass scored low. That ended up catching a real bug: without the
+check, a request that the strict pass had already answered cleanly
+could end up with a wider, weaker result simply because confidence
+had been near the threshold. The unit tests would have stayed
+green; only the harness would have noticed.
+
+**A flawed suggestion.** Earlier in the build, I asked for an
+energy-from-mood default and the first version overrode explicit
+energy phrases. So if the user said "sad music, high energy,"
+the parser would still snap energy down to 0.30 because "sad"
+mapped to it. That hid the contradiction the adversarial test
+case is supposed to expose. I had to push back and constrain the
+rule to "mood default applies *only* when no explicit energy
+phrase was matched." After that change, the contradictory case
+correctly produced both the high-energy reading and the
+low-arousal warning.
+
+The takeaway: AI tools are great at boilerplate and at suggesting
+structures I hadn't thought of, but they will happily write
+convenient logic that erases the very behavior the assignment is
+meant to test. The reliability harness is what keeps me honest,
+not the AI. (Full version of this reflection lives in
+`model_card.md` §11.)
+
+---
+
+## Portfolio Reflection — what this project says about me as an AI engineer
 
 Building this on top of Module 3 made the difference between a
 "function that returns answers" and an "applied AI system" feel
@@ -341,8 +356,12 @@ parsing, retrieval, evaluation, and a retry loop turned it into
 something that could *report on itself* — and the test harness
 turned that report into something I could trust.
 
-The thing I'm taking forward is that reliability scaffolding is
-worth building before fancy behavior. A confidence score and a
-small harness caught more bugs in this project than any amount of
-extra parsing logic would have, because they made every change
-visible.
+What I want this project to signal to a future employer is that
+I default to building reliability scaffolding before fancy
+behavior. I'd rather ship a deterministic pipeline with a
+confidence score, observable agent steps, and a 7-case harness
+than a flashier black-box that can't tell me when it's wrong.
+A confidence number and a small harness caught more bugs in this
+project than any amount of extra parsing logic would have,
+because they made every change visible — and that's the habit I
+want to carry into bigger systems.
