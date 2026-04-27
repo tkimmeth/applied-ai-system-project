@@ -14,8 +14,10 @@ venv/
 # Pytest cache
 .pytest_cache/
 
-# local/dev
-.venv/
-__pycache__/
-.pytest_cache/
+# Logs
 logs/
+*.log
+
+# Local env / secrets
+.env
+.env.*
