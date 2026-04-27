@@ -303,12 +303,15 @@ catalog skew directly.
 
 ## Video Walkthrough
 
-> YouTube link goes here once recorded.
+[**Watch the walkthrough**](https://drive.google.com/file/d/1Hfs1VWGZ55MEHkHJ7Ak7Tno2iTYMqxVc/view?usp=sharing)
 
-(The CodePath rubric mentions Loom — Loom doesn't have a Linux client,
-so the walkthrough is hosted on YouTube instead. Same content: an
-end-to-end run of the system, the AI feature behavior, and the
-reliability/guardrail behavior on the three sample inputs.)
+The video covers an end-to-end run of the system on three sample
+requests, the AI feature behavior (parser → retriever → ranker →
+evaluator agent loop), and the reliability/guardrail behavior
+including the adversarial case.
+
+(The CodePath rubric mentions Loom — Loom doesn't have a Linux
+client, so the walkthrough is hosted on Google Drive instead.)
 
 ---
 
